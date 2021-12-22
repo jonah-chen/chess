@@ -23,9 +23,31 @@ public:
 	 */
 	char operator[] (int pos) const;
 
+	uint32_t operator() () const;
+
 	bool move(int from, int to);
 
 	bool is_check(bool king_color) const;
+
+	inline bool turn() const { return cur_player; }
+
+	/**
+	 * @brief Get the numerical position given a string representation: i.e. "a1"
+	 * -> 0, "h8" -> 63
+	 * @param str The string representation of the position
+	 * @return The numerical position
+	 * @throws std::invalid_argument if the string is not a valid position
+	 */
+	static int get_pos(const std::string &str);
+
+	/**
+	 * @brief Get the human-readable string representation of a position: i.e. 0
+	 * -> "a1", 63 -> "h8"
+	 * @param pos The numerical position
+	 * @return The string representation of the position
+	 * @throws std::invalid_argument if the position is not valid
+	 */
+	static std::string get_str(int pos);
 
 private:
 	mutable board_t pieces[2];
@@ -36,18 +58,32 @@ private:
 	inline bool is(int pos, bool color) const
 	{ return pieces[color][pos] != piece::empty; }
 
+	/**
+	 * @brief Checks for the following conditions:
+	 * 	- The position the piece is moving to is a valid location on the board
+	 * 	- The piece being moved belongs to the current player
+	 * 	- There is no piece belonging to the current player at the position
+	 * 	the piece is moving to
+	 * @param pos The position the piece is located at currently
+	 * @param to The position the piece is moving to
+	 * @return true if the move is valid, false otherwise
+	 */
 	inline bool is_valid(int pos, int to) const
-	{ to >= 0 and to < 64 and is(pos,cur_player) and !is(to,cur_player); }
+	{ return to >= 0 and to < 64 and
+		is(pos,cur_player) and !is(to,cur_player); }
 
 	bool bishop_legal_move(int pos, int to) const;
 	bool rook_legal_move(int pos, int to) const;
 	bool queen_legal_move(int pos, int to) const;
 	bool knight_legal_move(int pos, int to) const;
 	bool king_legal_move(int pos, int to) const;
-	bool pawn_legal_move(int pos, int to) const;
+	int pawn_legal_move(int pos, int to) const; // return -1 if en passant is
+	// not possible, and return enpassant square if it is possible.
 	bool is_legal(int from, int to) const;
 	void update_castle_rights(int from);
 	bool castle(int from, int to);
+
+	static uint32_t seeded(piece p);
 
 private:
 	static constexpr char EMPTY_SQUARE = '.';
@@ -55,6 +91,29 @@ private:
 	 * Constants for colors
 	 */
 	static constexpr int WHITE = 0, BLACK = 1;
+	/**
+	 * Constants for pawn moves
+	 */
+	static constexpr int ILLEGAL_MOVE = 0, CAPTURE = -1, ADVANCE_1 = -2,
+	EN_PASSANT = -3, PROMOTION = -4;
+	static constexpr int QUEEN_PROMOTION = -100;
+	static constexpr int ROOK_PROMOTION = -101;
+	static constexpr int BISHOP_PROMOTION = -102;
+	static constexpr int KNIGHT_PROMOTION = -103;
+
+	static constexpr uint32_t SEED = 861317959;
+
+	static constexpr uint32_t PRIMES[64] = {
+		2,3,5,7,11,13,17,19,
+		23,29,31,37,41,43,47,53,
+		59,61,67,71,73,79,83,89,
+		97,101,103,107,109,113,127,131,
+		137,139,149,151,157,163,167,173,
+		179,181,191,193,197,199,211,223,
+		227,229,233,239,241,251,257,263,
+		269,271,277,281,283,293,307,311
+	};
+public:
 	/**
 	 * Constants for squares
 	 */

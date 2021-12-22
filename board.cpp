@@ -196,30 +196,53 @@ bool board::king_legal_move(int pos, int to) const
 	and (abs(diff_col));
 }
 
-bool board::pawn_legal_move(int pos, int to) const
+int board::pawn_legal_move(int pos, int to) const
 {
+	if (!is_valid(pos, to))
+		return 0;
+
 	const int diff_col = to / 8 - pos / 8;
 	const int diff_row = to % 8 - pos % 8;
 	bool move = !is(to, !cur_player) and diff_col == 0;
-	bool capture;
+	bool capture, en_passent;
+	int two_square;
 	if (cur_player == WHITE)
 	{
 		const bool advance = !is(pos+1, WHITE) and !is(pos+1, BLACK);
 		const bool one_square = diff_row == 1;
-		const bool two_square = pos % 8==1 and diff_row==2;
+		two_square = (pos % 8==1 and diff_row==2) ? pos + 1 : 0;
 		move = move and ( (advance and two_square) or one_square );
-		capture = diff_row == 1 and abs(diff_col) == 1 and is(to,!cur_player);
+		capture = diff_row == 1 and abs(diff_col) == 1;
 	}
 	else
 	{
+		// check if the move is a legal advance
 		const bool advance = !is(pos-1, WHITE) and !is(pos-1, BLACK);
+
+		// check if the advance is one square
 		const bool one_square = diff_row == -1;
-		const bool two_square = pos % 8==6 and diff_row==-2;
+
+		// if the advance is two squares, check for the en passent square
+		two_square = (pos % 8==6 and diff_row==-2) ? pos - 1 : 0;
+
+		// check if the move is valid
 		move = move and ( (advance and two_square) or one_square );
-		capture = diff_row==-1 and abs(diff_col)==1 and is(to,!cur_player);
+
+		// check if the move is a capture
+		capture = diff_row==-1 and abs(diff_col)==1;
 	}
 
-	return is_valid(pos, to) and (move or capture);
+	en_passent = capture and to == en_passant_square;
+	capture = capture and is(to,!cur_player);
+
+	if (capture)
+		return CAPTURE;
+	if (en_passent)
+		return EN_PASSANT;
+	if (move)
+		return two_square ? two_square : ADVANCE_1;
+
+	return ILLEGAL_MOVE;
 }
 
 bool board::is_legal(int from, int to) const
@@ -261,31 +284,90 @@ bool board::is_legal(int from, int to) const
 
 bool board::move(int from, int to)
 {
-	std::cout << (cur_player == WHITE ? "white" : "black") << " tried to make"
-															  " a move";
+	// check if it is a promotion move
+	switch (to)
+	{
+	case QUEEN_PROMOTION:
+		pieces[cur_player][from] = piece::queen;
+		return true;
+	case ROOK_PROMOTION:
+		pieces[cur_player][from] = piece::rook;
+		return true;
+	case BISHOP_PROMOTION:
+		pieces[cur_player][from] = piece::bishop;
+		return true;
+	case KNIGHT_PROMOTION:
+		pieces[cur_player][from] = piece::knight;
+		return true;
+	default:
+		break;
+	}
+
+	// check if there are any pawns on the first and eighth rank
+	for (int sq = A1; sq <= H1; sq+=8)
+		if (pieces[BLACK][sq] == piece::pawn)
+			return false;
+	for (int sq = A8; sq <= H8; sq+=8)
+		if (pieces[WHITE][sq] == piece::pawn)
+			return false;
+
+
+	// handle castling first
 	if ((from == E1 or from == E8) and castle(from, to))
 		return true;
+
+	// check for legal moves
 	if (!is_legal(from, to))
 		return false;
 
-	piece opp_to = pieces[!cur_player][to];
-	piece cp_to = pieces[cur_player][to];
-	pieces[!cur_player][to] = piece::empty;
-	pieces[cur_player][to] = pieces[cur_player][from];
-	pieces[cur_player][from] = piece::empty;
-
-	if (is_check(cur_player))
+	int pawn_status = pawn_legal_move(from, to);
+	if (pawn_status == EN_PASSANT)
 	{
-		pieces[cur_player][from] = pieces[cur_player][to];
-		pieces[!cur_player][to] = opp_to;
-		pieces[cur_player][to] = cp_to;
-		std::cout << "you are in check\n";
-		return false;
+		// do enpassent
+		int captured_square = en_passant_square + (cur_player == WHITE ? -1:1);
+		pieces[!cur_player][captured_square] = piece::empty;
+		pieces[cur_player][to] = piece::pawn;
+		pieces[cur_player][from] = piece::empty;
+
+		if (is_check(cur_player))
+		{
+			pieces[cur_player][to] = piece::empty;
+			pieces[cur_player][from] = piece::pawn;
+			pieces[!cur_player][captured_square] = piece::pawn;
+			return false;
+		}
+	}
+	else
+	{
+		// make the move, but save enough info to undo the move
+		piece opp_to = pieces[!cur_player][to];
+		piece cp_to = pieces[cur_player][to];
+		pieces[!cur_player][to] = piece::empty;
+		pieces[cur_player][to] = pieces[cur_player][from];
+		pieces[cur_player][from] = piece::empty;
+
+		// check for checks, if the move cause your king to be in check, it is
+		// illegal so undo the move
+		if (is_check(cur_player))
+		{
+			pieces[cur_player][from] = pieces[cur_player][to];
+			pieces[!cur_player][to] = opp_to;
+			pieces[cur_player][to] = cp_to;
+			std::cout << "you are in check\n";
+			return false;
+		}
+		// update the castling rights
+		update_castle_rights(from);
 	}
 
-	cur_player = !cur_player;
+	// as the move is legal, and it is made, it is now your opponent's turn
+	// unless it is a pawn promotion, in which case it is your turn again to
+	// make the promotion
+	if (pawn_status != PROMOTION)
+		cur_player = !cur_player;
 
-	update_castle_rights(from);
+	// update the en passant square
+	en_passant_square = pawn_status > 0 ? pawn_status : -1;
 
 	return true;
 }
@@ -404,6 +486,78 @@ void board::update_castle_rights(int from)
 		break;
 	default:
 		break;
+	}
+}
+
+int board::get_pos(const std::string &str)
+{
+	if (str.size() != 2)
+		throw std::invalid_argument("Invalid argument. A position is "
+									"described with 2 letters. i.e. b4");
+	switch(str.front())
+	{
+	case 'Q':
+		return QUEEN_PROMOTION;
+	case 'R':
+		return ROOK_PROMOTION;
+	case 'B':
+		return BISHOP_PROMOTION;
+	case 'N':
+		return KNIGHT_PROMOTION;
+	default:
+		break;
+	}
+
+	if (str.back() < '1' or str.back() > '8')
+		throw std::invalid_argument("invalid promotion: promotion must be "
+									"Q, R, B, or N");
+
+	int row = str[0] - 'a';
+	int col = str[1] - '1';
+
+	if (row > 8 or row < 0 or col > 8 or col < 0)
+		throw std::invalid_argument("Invalid argument. The positions must be "
+									"within the range a1 to h8");
+
+	return row * 8 + col;
+}
+
+std::string board::get_str(int pos)
+{
+	int row = pos % 8;
+	int col = pos / 8;
+	return std::string(1, 'a' + row) + std::string(1, '1' + col);
+}
+
+uint32_t board::operator()() const
+{
+	uint32_t hash = SEED;
+	for (int i = 0; i < 64; ++i)
+	{
+		hash += seeded(pieces[WHITE][i]) * PRIMES[i];
+		hash += seeded(pieces[BLACK][i]) * PRIMES[i] * PRIMES[i];
+	}
+	return hash;
+}
+
+uint32_t board::seeded(board::piece p)
+{
+	switch (p)
+	{
+	case piece::pawn:
+		return 813667567;
+	case piece::king:
+		return 101811653;
+	case piece::rook:
+		return 647308517;
+	case piece::knight:
+		return 690245837;
+	case piece::queen:
+		return 678660239;
+	case piece::bishop:
+		return 780843829;
+	default:
+		return 0;
 	}
 }
 
