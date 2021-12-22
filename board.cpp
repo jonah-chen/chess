@@ -2,7 +2,8 @@
 
 namespace chess {
 board::board()
-: cur_player(WHITE), pieces()
+: pieces(), cur_player(WHITE), white_long(true), white_short(true),
+black_long(true), black_short(true), en_passant_square(-1)
 {
 	pieces[WHITE][A1] = piece::rook;
 	pieces[WHITE][B1] = piece::knight;
@@ -83,10 +84,8 @@ bool board::bishop_legal_move(int pos, int to) const
 {
 	const int diff_col = to / 8 - pos / 8;
 	const int diff_row = to % 8 - pos % 8;
-	if (to < 0 or to >= 64 or !is(pos,cur_player) or is(to,cur_player))
-		return false;
 
-	if (diff_col==0 and abs(diff_col) != abs(diff_row))
+	if (diff_col==0 or abs(diff_col) != abs(diff_row))
 		return false;
 
 	if (diff_col > 0 and diff_row > 0)
@@ -107,7 +106,7 @@ bool board::bishop_legal_move(int pos, int to) const
 	}
 	if (diff_col < 0 and diff_row > 0)
 	{
-		for (int i = -1; i > diff_row; i--) // while moving rows to 'to'
+		for (int i = -1; i > diff_col; i--) // while moving rows to 'to'
 		{
 			if ((*this)[pos + i * 8 - i] != EMPTY_SQUARE)
 				return false;
@@ -159,7 +158,7 @@ bool board::rook_legal_move(int pos, int to) const
 	}
 	if (diff_row < 0)
 	{
-		for (int i= -1 ; i > diff_col; i--) // while moving columns to 'to'
+		for (int i= -1 ; i > diff_row; i--) // while moving columns to 'to'
 		{
 			if ((*this)[pos + i] != EMPTY_SQUARE)
 				return false;
@@ -193,7 +192,8 @@ bool board::king_legal_move(int pos, int to) const
 {
 	const int diff_col = to / 8 - pos / 8;
 	const int diff_row = to % 8 - pos % 8;
-	return is_valid(pos, to) and abs(diff_col) == 1 or abs(diff_row) == 1;
+	return is_valid(pos, to) and (abs(diff_col) <= 1 and abs(diff_row) <= 1)
+	and (abs(diff_col));
 }
 
 bool board::pawn_legal_move(int pos, int to) const
@@ -220,6 +220,191 @@ bool board::pawn_legal_move(int pos, int to) const
 	}
 
 	return is_valid(pos, to) and (move or capture);
+}
+
+bool board::is_legal(int from, int to) const
+{
+	auto selected_piece = pieces[cur_player][from];
+
+	switch (selected_piece)
+	{
+	case piece::pawn:
+		if (!pawn_legal_move(from, to))
+			return false;
+		break;
+	case piece::knight:
+		if (!knight_legal_move(from, to))
+			return false;
+		break;
+	case piece::bishop:
+		if (!bishop_legal_move(from, to))
+			return false;
+		break;
+	case piece::rook:
+		if (!rook_legal_move(from, to))
+			return false;
+		break;
+	case piece::queen:
+		if (!queen_legal_move(from, to))
+			return false;
+		break;
+	case piece::king:
+		if(!king_legal_move(from, to))
+			return false;
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+bool board::move(int from, int to)
+{
+	std::cout << (cur_player == WHITE ? "white" : "black") << " tried to make"
+															  " a move";
+	if ((from == E1 or from == E8) and castle(from, to))
+		return true;
+	if (!is_legal(from, to))
+		return false;
+
+	piece opp_to = pieces[!cur_player][to];
+	piece cp_to = pieces[cur_player][to];
+	pieces[!cur_player][to] = piece::empty;
+	pieces[cur_player][to] = pieces[cur_player][from];
+	pieces[cur_player][from] = piece::empty;
+
+	if (is_check(cur_player))
+	{
+		pieces[cur_player][from] = pieces[cur_player][to];
+		pieces[!cur_player][to] = opp_to;
+		pieces[cur_player][to] = cp_to;
+		std::cout << "you are in check\n";
+		return false;
+	}
+
+	cur_player = !cur_player;
+
+	update_castle_rights(from);
+
+	return true;
+}
+
+bool board::is_check(bool king_color) const
+{
+	// find where the king is
+	int king_pos {-1};
+	bool _cur_player = cur_player;
+	cur_player = !king_color; // temporarily assign the player to the current
+	// player
+
+	for (int i=0; i<64 and king_pos<0; i++)
+		if (pieces[king_color][i]==piece::king)
+			king_pos = i;
+
+	for (int i=0; i<64; i++)
+	{
+		if (is_legal(i, king_pos))
+		{
+			cur_player = _cur_player;
+			return true;
+		}
+	}
+	cur_player = _cur_player;
+	return false;
+}
+
+bool board::castle(int from, int to)
+{
+	if (!is_valid(from, to) or is_check(cur_player))
+		return false;
+
+	int king_from, king_to;
+	int rook_from, rook_to;
+
+	if (from == E1 and cur_player == WHITE)
+	{
+		king_from = E1;
+		if (to==G1 and white_short)
+		{
+			king_to = G1;
+			rook_from = H1;
+			rook_to = F1;
+		}
+		else if(to==C1 and white_long)
+		{
+			king_to = C1;
+			rook_from = A1;
+			rook_to = D1;
+		}
+        else
+            return false;
+	}
+	if (from == E8 and cur_player == BLACK)
+	{
+		king_from = E8;
+		if (to==G8 and black_short)
+		{
+			king_to = G8;
+			rook_from = H8;
+			rook_to = F8;
+		}
+        else if(to==C8 and black_long)
+        {
+            king_to = C8;
+            rook_from = A8;
+            rook_to = D8;
+        }
+        else
+            return false;
+	}
+    if (pieces[WHITE][rook_to] != piece::empty or
+        pieces[BLACK][rook_to] != piece::empty)
+        return false;
+
+    pieces[cur_player][king_from] = piece::empty;
+    pieces[cur_player][rook_to] = piece::king;
+
+    if (is_check(cur_player))
+    {
+        pieces[cur_player][king_from] = piece::king;
+        pieces[cur_player][rook_to] = piece::empty;
+        return false;
+    }
+    
+    pieces[cur_player][rook_to] = piece::rook;
+    pieces[cur_player][king_to] = piece::king;
+    pieces[cur_player][rook_from] = piece::empty;
+    return true;
+}
+
+void board::update_castle_rights(int from)
+{
+	switch(from)
+	{
+	case E1:
+		white_short = false;
+		white_long = false;
+		break;
+	case E8:
+		black_short = false;
+		black_long = false;
+		break;
+	case A1:
+		white_long = false;
+		break;
+	case A8:
+		black_long = false;
+		break;
+	case H1:
+		white_long = false;
+		break;
+	case H8:
+		white_short = false;
+		break;
+	default:
+		break;
+	}
 }
 
 }

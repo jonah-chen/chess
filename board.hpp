@@ -23,22 +23,31 @@ public:
 	 */
 	char operator[] (int pos) const;
 
+	bool move(int from, int to);
+
+	bool is_check(bool king_color) const;
+
+private:
+	mutable board_t pieces[2];
+	mutable bool cur_player;
+	bool white_short, white_long, black_short, black_long;
+	int en_passant_square;
+
 	inline bool is(int pos, bool color) const
 	{ return pieces[color][pos] != piece::empty; }
 
-private:
-	board_t pieces[2];
-	bool cur_player;
-
 	inline bool is_valid(int pos, int to) const
-	{ to < 0 or to >= 64 or !is(pos,cur_player) or is(to,cur_player); }
+	{ to >= 0 and to < 64 and is(pos,cur_player) and !is(to,cur_player); }
+
 	bool bishop_legal_move(int pos, int to) const;
 	bool rook_legal_move(int pos, int to) const;
 	bool queen_legal_move(int pos, int to) const;
 	bool knight_legal_move(int pos, int to) const;
 	bool king_legal_move(int pos, int to) const;
 	bool pawn_legal_move(int pos, int to) const;
-
+	bool is_legal(int from, int to) const;
+	void update_castle_rights(int from);
+	bool castle(int from, int to);
 
 private:
 	static constexpr char EMPTY_SQUARE = '.';
