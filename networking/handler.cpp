@@ -5,10 +5,45 @@ namespace networking {
 handler::handler(const std::string &code)
 		: server_ip(codes::decode_ip(code)),
 		  server_port(codes::decode_port(code)),
-		  io_context(),
 		  socket(io_context),
-		  endpoint(server_ip, server_port)
-{}
+		  connected(false)
+{
+	data.resize(MSG_SIZE);
+}
+
+void handler::listener()
+{
+	while(connected)
+	{
+		while (data_ready)
+			;
+		asio::read(socket, asio::buffer(data, MSG_SIZE));
+		log_error();
+		if (static_cast<header>(data[0]) == header::disconnect)
+		{
+			std::cout << "Client has disconnected" << std::endl;
+			connected = false;
+		}
+		else
+			data_ready = true;
+	}
+}
+
+void handler::send(const asio::const_buffer &msg)
+{
+	asio::write(socket, msg);
+	log_error();
+}
+
+bool handler::read(header &head, std::string &body)
+{
+	if (!data_ready)
+		return false;
+	head = *(header*)(data.substr(0, sizeof(header)).c_str());
+	body = data.substr(sizeof(header));
+	data_ready = false;
+	return true;
+}
 
 void handler::log_error (std::ostream &err_stream) const
 {
@@ -22,7 +57,7 @@ asio::const_buffer handler::to_buffer(header h, const std::string &data4)
 		throw std::invalid_argument("data4 must be 4 bytes long");
 	std::stringstream ss;
 	ss << static_cast<char>(h) << data4;
-	return asio::buffer(ss.str(), 5);
+	return asio::buffer(ss.str(), MSG_SIZE);
 }
 
 asio::const_buffer handler::to_buffer(header h, uint16_t code)
@@ -34,7 +69,7 @@ asio::const_buffer handler::to_buffer(header h, uint16_t code)
 	std::stringstream ss;
 	ss << static_cast<char>(h) << static_cast<char>(code >> 8)
 	   << static_cast<char>(code & 0xFF) << '\0' << '\0';
-	return asio::buffer(ss.str(), 5);
+	return asio::buffer(ss.str(), MSG_SIZE);
 }
 
 asio::const_buffer handler::to_buffer(header h, uint32_t hash)
@@ -47,7 +82,7 @@ asio::const_buffer handler::to_buffer(header h, uint32_t hash)
 	ss << static_cast<char>(h) << static_cast<char>(hash >> 24)
 	   << static_cast<char>(hash >> 16) << static_cast<char>(hash >> 8)
 	   << static_cast<char>(hash & 0xFF);
-	return asio::buffer(ss.str(), 5);
+	return asio::buffer(ss.str(), MSG_SIZE);
 }
 
 namespace codes {
@@ -72,7 +107,7 @@ uint32_t ip_to_int(const std::string &ip)
 std::string int_to_ip(uint32_t ip)
 {
 	std::string result;
-	for (int i = 0; i < 4; i++)
+	for (int i = 3; i >= 0; i--)
 		result += std::to_string((ip >> (i * 8)) & 0xff) + ".";
 	result.pop_back();
 	return result;
@@ -85,9 +120,9 @@ std::string int_to_ip(uint32_t ip)
 std::string int_to_code(uint64_t code)
 {
 	std::string result;
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < 11; i++)
 	{
-		uint8_t c = (code >> (i * 6)) & 0xff;
+		uint8_t c = (code >> (i * 6)) & 0b111111;
 		if (c < 26)
 			result += 'A' + c;
 		else if (c < 52)
@@ -105,7 +140,7 @@ std::string int_to_code(uint64_t code)
 std::string encode(uint32_t ip, uint16_t port, uint16_t uid)
 {
 	uint64_t _ip = ip, _port = port, _uid = uid;
-	return int_to_code(_ip + (_port << 32) + (_uid << 48));
+	return int_to_code((_ip << 32) | (_port << 16) | _uid);
 }
 
 /**
@@ -115,7 +150,7 @@ std::string encode(uint32_t ip, uint16_t port, uint16_t uid)
 uint64_t code_to_int(const std::string &code)
 {
 	uint64_t result = 0;
-	for (int i = 0; i < 8; i++)
+	for (int i = 10; i >= 0; i--)
 	{
 		uint8_t c = code[i];
 		if (c >= 'A' && c <= 'Z')
@@ -134,17 +169,17 @@ uint64_t code_to_int(const std::string &code)
 
 asio::ip::address decode_ip(const std::string &code)
 {
-	return asio::ip::make_address(int_to_ip(code_to_int(code)));
+	return asio::ip::make_address(int_to_ip(code_to_int(code)>>32));
 }
 
 uint16_t decode_port(const std::string &code)
 {
-	return code_to_int(code)>>32;
+	return code_to_int(code)>>16;
 }
 
 uint16_t decode_uid(const std::string &code)
 {
-	return code_to_int(code)>>48;
+	return code_to_int(code);
 }
 
 }

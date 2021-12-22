@@ -10,7 +10,7 @@ class master : public handler
 {
 public:
 	master(const std::string &code, uint32_t initial_board_hash);
-	~master();
+	~master() override;
 
 private:
 	tcp::endpoint reciever;

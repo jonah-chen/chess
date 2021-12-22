@@ -14,7 +14,7 @@ master::master(const std::string &code, uint32_t initial_board_hash)
 	{
 		acceptor.accept(socket, error_code);
 		log_error();
-		asio::read(socket, asio::buffer(connection_req, MSG_SIZE), error_code);
+        asio::read(socket, asio::buffer(connection_req, MSG_SIZE), error_code);
 		log_error();
 
 		asio::write(socket, to_buffer(header::board_hash, initial_board_hash), error_code);
@@ -26,7 +26,7 @@ master::master(const std::string &code, uint32_t initial_board_hash)
 
 master::~master()
 {
-
+	std::cout << "Connection closed" << std::endl;
 }
 
 

@@ -8,7 +8,7 @@ class slave : public handler
 {
 public:
 	slave(const std::string &code, uint32_t initial_board_hash);
-	~slave();
+	~slave() override = default;
 
 private:
 	tcp::endpoint server;
